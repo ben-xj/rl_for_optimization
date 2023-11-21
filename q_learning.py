@@ -41,3 +41,32 @@ class QLearning:
                 if done:
                     print(f'episode {i} reward: {episode_reward}')
                     break
+
+    def eval_policy(self):
+        cur_state = start
+        path = [cur_state]
+
+        while cur_state != self.env.goal:
+            action = np.argmax(self.Q[cur_state])
+            action_edge = list(self.env.graph.edges)[action]
+            if cur_state == action_edge[0]:
+                cur_state = action_edge[1]
+                path.append(cur_state)
+            else:
+                print('wrong policy')
+                break
+        return path
+
+
+if __name__ == '__main__':
+    G = nx.DiGraph()
+    G.add_edges_from([(0, 1), (0, 2), (1, 2), (1, 3), (2, 4), (3, 4)])
+
+    start = 0
+    goal = 4
+    env = ShortestPathEnv(G, start, goal)
+
+    model = QLearning(env)
+    model.learn()
+    path = model.eval_policy()
+    print(f"shortest path: {path}")
