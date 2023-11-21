@@ -1,6 +1,8 @@
 import numpy as np
 import networkx as nx
 from env import ShortestPathEnv
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 
 
 class QLearning:
@@ -10,15 +12,15 @@ class QLearning:
         self.init_hyperparams()
 
         self.Q = np.zeros((env.num_states, env.num_actions))
+        self.writer = SummaryWriter()
 
     def init_hyperparams(self):
         self.alpha = 0.1
         self.gamma = 0.9
-        self.epsilon = 0.1
-        self.num_episodes = 1000
+        self.epsilon = 0.05
 
-    def learn(self):
-        for i in range(self.num_episodes):
+    def learn(self, num_episodes=1000):
+        for i in tqdm(range(num_episodes)):
             state = self.env.reset()
             episode_reward = 0
 
@@ -39,23 +41,24 @@ class QLearning:
                 state = next_state
 
                 if done:
-                    print(f'episode {i} reward: {episode_reward}')
                     break
+            if i % 5 == 0:
+                total_reward, _ = self.eval_policy()
+                self.writer.add_scalar("total reward", total_reward, i)
+        self.writer.close()
 
     def eval_policy(self):
-        cur_state = start
-        path = [cur_state]
-
-        while cur_state != self.env.goal:
-            action = np.argmax(self.Q[cur_state])
-            action_edge = list(self.env.graph.edges)[action]
-            if cur_state == action_edge[0]:
-                cur_state = action_edge[1]
-                path.append(cur_state)
-            else:
-                print('wrong policy')
+        state = self.env.reset()
+        path = [state]
+        total_reward = 0
+        while True:
+            action = np.argmax(self.Q[state])
+            state, reward, done = self.env.step(action)
+            total_reward += reward
+            path.append(state)
+            if done:
                 break
-        return path
+        return total_reward, path
 
 
 if __name__ == '__main__':
@@ -67,6 +70,6 @@ if __name__ == '__main__':
     env = ShortestPathEnv(G, start, goal)
 
     model = QLearning(env)
-    model.learn()
-    path = model.eval_policy()
+    model.learn(2000)
+    _, path = model.eval_policy()
     print(f"shortest path: {path}")
