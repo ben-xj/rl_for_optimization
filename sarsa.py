@@ -5,7 +5,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 
-class QLearning:
+class SARSA:
 
     def __init__(self, env) -> None:
         self.env = env
@@ -32,36 +32,48 @@ class QLearning:
             state = self.env.reset()
             episode_reward = 0
 
-            while True:
-                action = self.explore_policy(state)
+            # Choose the initial action using epsilon-greedy policy
+            action = self.explore_policy(state)
 
+            while True:
                 next_state, reward, done = self.env.step(action)
                 episode_reward += reward
 
+                # Choose the next action using epsilon-greedy policy
+                next_action = self.explore_policy(next_state)
+
                 self.Q[state, action] = self.Q[state, action] + self.alpha * (
-                    reward + np.max(self.Q[next_state]) - self.Q[state, action]
+                    reward + self.gamma *
+                    self.Q[next_state, next_action] - self.Q[state, action]
                 )
 
                 state = next_state
+                action = next_action
 
                 if done:
                     break
+
             if i % 5 == 0:
                 total_reward, _ = self.eval_policy()
                 self.writer.add_scalar("total reward", total_reward, i)
+
         self.writer.close()
 
     def eval_policy(self):
         state = self.env.reset()
         path = [state]
         total_reward = 0
+
+        # Choose actions greedily
         while True:
             action = np.argmax(self.Q[state])
             state, reward, done = self.env.step(action)
             total_reward += reward
             path.append(state)
+
             if done:
                 break
+
         return total_reward, path
 
 
@@ -73,7 +85,7 @@ if __name__ == '__main__':
     goal = 4
     env = ShortestPathEnv(G, start, goal)
 
-    model = QLearning(env)
+    model = SARSA(env)
     model.learn(2000)
     _, path = model.eval_policy()
     print(f"shortest path: {path}")
