@@ -6,6 +6,7 @@ import torch.optim as optim
 from env import ShortestPathEnv
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+from collections import deque
 
 
 class MLP(nn.Module):
@@ -32,13 +33,16 @@ class DQN:
         self.criterion = nn.MSELoss()
         self.batch = []
 
+        self.replay_buffer = deque(maxlen=self.replay_buffer_size)
+
         self.writer = SummaryWriter()
 
     def init_hyperparams(self):
         self.alpha = 0.1
         self.gamma = 0.9
-        self.epsilon = 0.05
-        self.batch_size = 20
+        self.epsilon = 0.1
+        self.batch_size = 16
+        self.replay_buffer_size = 100
 
     def get_best_action(self, state):
         state_tensor = torch.eye(self.env.num_states)[state]
@@ -55,7 +59,15 @@ class DQN:
             action = self.get_best_action(state)
         return action
 
-    def update_network(self, batch):
+    def update_network(self):
+
+        if len(self.replay_buffer) < self.batch_size:
+            return
+
+        batch = np.random.choice(
+            len(self.replay_buffer), size=self.batch_size, replace=False)
+        batch = [self.replay_buffer[i] for i in batch]
+
         states, actions, rewards, next_states, dones = zip(*batch)
         state_tensor = torch.eye(self.env.num_states)[list(states)]
         action_tensor = torch.tensor(actions, dtype=torch.long)
@@ -85,17 +97,16 @@ class DQN:
                 episode_reward += reward
 
                 # Save data to batch
-                self.batch.append((state, action, reward, next_state, done))
+                self.replay_buffer.append(
+                    (state, action, reward, next_state, done))
 
                 state = next_state
 
                 if done:
-                    # Check if batch size is reached, then update network
-                    if len(self.batch) >= self.batch_size:
-                        self.update_network(self.batch)
-                        self.batch = []  # Clear batch after updating network
+                    self.update_network()
                     break
             if i % 5 == 0:
+
                 total_reward, _ = self.eval_policy()
                 self.writer.add_scalar("total reward", total_reward, i)
         self.writer.close()
