@@ -30,6 +30,7 @@ class DQN:
         self.Q = MLP(env.num_states, env.num_actions)
         self.optimizer = optim.Adam(self.Q.parameters(), lr=self.alpha)
         self.criterion = nn.MSELoss()
+        self.batch = []
 
         self.writer = SummaryWriter()
 
@@ -37,6 +38,7 @@ class DQN:
         self.alpha = 0.1
         self.gamma = 0.9
         self.epsilon = 0.05
+        self.batch_size = 20
 
     def get_best_action(self, state):
         state_tensor = torch.eye(self.env.num_states)[state]
@@ -53,6 +55,24 @@ class DQN:
             action = self.get_best_action(state)
         return action
 
+    def update_network(self, batch):
+        states, actions, rewards, next_states, dones = zip(*batch)
+        state_tensor = torch.eye(self.env.num_states)[list(states)]
+        action_tensor = torch.tensor(actions, dtype=torch.long)
+        reward_tensor = torch.tensor(rewards, dtype=torch.float)
+        next_state_tensor = torch.eye(self.env.num_states)[list(next_states)]
+        done_tensor = torch.tensor(dones, dtype=torch.float)
+
+        # Compute current Q values and target Q values
+        current_q = self.Q(state_tensor).gather(1, action_tensor.unsqueeze(1))
+        next_q = self.Q(next_state_tensor).max(1)[0].unsqueeze(1)
+        target_q = reward_tensor + self.gamma * next_q * (1 - done_tensor)
+
+        loss = self.criterion(current_q, target_q)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
     def learn(self, num_episodes=1000):
         for i in tqdm(range(num_episodes)):
             state = self.env.reset()
@@ -64,19 +84,16 @@ class DQN:
                 next_state, reward, done = self.env.step(action)
                 episode_reward += reward
 
-                next_q = torch.max(
-                    self.Q(torch.eye(self.env.num_states)[next_state]))
-                target_q = reward + self.gamma * next_q
-                current_q = self.Q(
-                    torch.eye(self.env.num_states)[state])[action]
-                loss = self.criterion(current_q, target_q)
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
+                # Save data to batch
+                self.batch.append((state, action, reward, next_state, done))
 
                 state = next_state
 
                 if done:
+                    # Check if batch size is reached, then update network
+                    if len(self.batch) >= self.batch_size:
+                        self.update_network(self.batch)
+                        self.batch = []  # Clear batch after updating network
                     break
             if i % 5 == 0:
                 total_reward, _ = self.eval_policy()
